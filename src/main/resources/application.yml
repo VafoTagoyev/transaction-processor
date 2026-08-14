@@ -1,0 +1,120 @@
+spring:
+  application:
+    name: transaction-processor
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/txprocessor}
+    username: ${DB_USER:txprocessor}
+    password: ${DB_PASSWORD:txprocessor}
+    hikari:
+      # Sizing rule: workers + poller + heartbeat + recovery + outbox relay + headroom.
+      # Going much higher does NOT increase throughput - PostgreSQL processes are not free and
+      # past roughly (2 x cores + effective_spindle_count) concurrent statements the server
+      # spends its time context switching. See docs/concurrency.md.
+      maximum-pool-size: ${DB_POOL_SIZE:20}
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      # Fail fast rather than pile threads up on an unavailable database.
+      connection-timeout: 10000
+      validation-timeout: 3000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      pool-name: tx-processor-pool
+      # Guardrail: a connection held longer than this is a bug in transaction boundaries.
+      leak-detection-threshold: 60000
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # Per-command timeout is set from processor.redis.timeout in RedisConfig.
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+  task:
+    scheduling:
+      # Recovery sweep, lease heartbeat and outbox relay each need their own thread, otherwise
+      # a slow sweep would delay the heartbeat and cause spurious lease expiry.
+      pool:
+        size: 3
+
+  threads:
+    virtual:
+      enabled: false
+
+processor:
+  instance-id: ${INSTANCE_ID:${HOSTNAME:local}}
+  enabled: ${PROCESSOR_ENABLED:true}
+  batch-size: ${BATCH_SIZE:1000}
+  workers: ${WORKERS:8}
+  polling-delay: ${POLLING_DELAY:500ms}
+  polling-idle-delay: ${POLLING_IDLE_DELAY:2s}
+  processing-timeout: ${PROCESSING_TIMEOUT:10m}
+  lease-renewal-interval: ${LEASE_RENEWAL_INTERVAL:30s}
+  queue-capacity: ${QUEUE_CAPACITY:5000}
+  queue-offer-timeout: ${QUEUE_OFFER_TIMEOUT:5s}
+  min-claim-batch: ${MIN_CLAIM_BATCH:1}
+  max-retries: ${MAX_RETRIES:3}
+  retry-initial-delay: ${RETRY_INITIAL_DELAY:1s}
+  retry-multiplier: ${RETRY_MULTIPLIER:3.0}
+  retry-max-delay: ${RETRY_MAX_DELAY:5m}
+  shutdown-grace-period: ${SHUTDOWN_GRACE_PERIOD:30s}
+  redis:
+    timeout: ${REDIS_TIMEOUT:200ms}
+    immediate-retries: ${REDIS_IMMEDIATE_RETRIES:1}
+    immediate-retry-delay: ${REDIS_IMMEDIATE_RETRY_DELAY:50ms}
+    retry-on-cache-miss: ${REDIS_RETRY_ON_CACHE_MISS:false}
+  recovery:
+    enabled: ${RECOVERY_ENABLED:true}
+    interval: ${RECOVERY_INTERVAL:1m}
+    batch-size: ${RECOVERY_BATCH_SIZE:1000}
+  outbox:
+    relay-enabled: ${OUTBOX_RELAY_ENABLED:true}
+    relay-interval: ${OUTBOX_RELAY_INTERVAL:1s}
+    relay-batch-size: ${OUTBOX_RELAY_BATCH_SIZE:500}
+
+generator:
+  enabled: ${GENERATOR_ENABLED:false}
+  exit-after-run: ${GENERATOR_EXIT_AFTER_RUN:true}
+  truncate-first: ${GENERATOR_TRUNCATE_FIRST:true}
+  transactions: ${GENERATOR_TRANSACTIONS:1000000}
+  cards: ${GENERATOR_CARDS:100000}
+  terminals: ${GENERATOR_TERMINALS:10000}
+  internal-ratio: ${GENERATOR_INTERNAL_RATIO:0.80}
+  card-miss-ratio: ${GENERATOR_CARD_MISS_RATIO:0.01}
+  terminal-miss-ratio: ${GENERATOR_TERMINAL_MISS_RATIO:0.01}
+  boundary-amount-ratio: ${GENERATOR_BOUNDARY_AMOUNT_RATIO:0.02}
+  batch-size: ${GENERATOR_BATCH_SIZE:50000}
+  reference-data-ttl: ${GENERATOR_REFERENCE_DATA_TTL:0s}
+  seed: ${GENERATOR_SEED:20240101}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,loggers
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      # Every metric is tagged with the instance, so a Prometheus query can compare the three
+      # processors or sum across them.
+      instance: ${INSTANCE_ID:${HOSTNAME:local}}
+      application: transaction-processor
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+logging:
+  level:
+    root: INFO
+    com.example.txprocessor: ${LOG_LEVEL:INFO}

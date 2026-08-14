@@ -1,0 +1,144 @@
+# Three processors, one PostgreSQL, one Valkey - the topology required by section 8 of the
+# assignment. Every processor is the identical image with a different INSTANCE_ID; the identity
+# comes from the container hostname, so `docker compose up --scale` also works.
+#
+#   docker compose up -d --build                          start the cluster
+#   docker compose --profile generator run --rm generator  load the dataset
+#   docker compose kill -s SIGKILL processor-2             crash one instance (C3)
+#   docker compose up -d processor-2                       bring it back (C4)
+
+# Shared processor definition. A top-level x- field rather than a service anchor, so that no
+# service inherits another service's container_name.
+x-processor: &processor
+  build: .
+  image: transaction-processor:latest
+  depends_on:
+    postgres:
+      condition: service_healthy
+    valkey:
+      condition: service_healthy
+  environment: &processor-env
+    DB_URL: jdbc:postgresql://postgres:5432/txprocessor
+    DB_USER: txprocessor
+    DB_PASSWORD: txprocessor
+    DB_POOL_SIZE: "20"
+    REDIS_HOST: valkey
+    REDIS_PORT: "6379"
+    # INSTANCE_ID is left unset on purpose: it falls back to ${HOSTNAME}, which docker sets to the
+    # container id / container_name. That keeps identity correct under `--scale` too.
+    WORKERS: "8"
+    BATCH_SIZE: "1000"
+    POLLING_DELAY: "500ms"
+    PROCESSING_TIMEOUT: "2m"
+    LEASE_RENEWAL_INTERVAL: "20s"
+    QUEUE_CAPACITY: "5000"
+    MAX_RETRIES: "3"
+    RECOVERY_INTERVAL: "30s"
+    REDIS_TIMEOUT: "200ms"
+    SERVER_PORT: "8080"
+    JAVA_OPTS: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -XX:+UseG1GC"
+  healthcheck:
+    test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/actuator/health | grep -q UP"]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+    start_period: 40s
+  deploy:
+    resources:
+      limits:
+        memory: 1g
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: tx-postgres
+    environment:
+      POSTGRES_DB: txprocessor
+      POSTGRES_USER: txprocessor
+      POSTGRES_PASSWORD: txprocessor
+      # Keep checksums off and fsync on: we want realistic durability behaviour in the
+      # crash-recovery demonstration.
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=1536MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - wal_buffers=16MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - log_min_duration_statement=2000
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U txprocessor -d txprocessor"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    shm_size: 512mb
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: tx-valkey
+    command: ["valkey-server", "--save", "", "--appendonly", "no", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  processor-1:
+    <<: *processor
+    container_name: processor-1
+    ports:
+      - "8081:8080"
+
+  processor-2:
+    <<: *processor
+    container_name: processor-2
+    ports:
+      - "8082:8080"
+
+  processor-3:
+    <<: *processor
+    container_name: processor-3
+    ports:
+      - "8083:8080"
+
+  # Run on demand:  docker compose --profile generator run --rm generator
+  # No container_name here on purpose: `compose run` assigns its own.
+  generator:
+    <<: *processor
+    profiles: ["generator"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    environment:
+      <<: *processor-env
+      PROCESSOR_ENABLED: "false"
+      GENERATOR_ENABLED: "true"
+      GENERATOR_TRANSACTIONS: "${GEN_TRANSACTIONS:-1000000}"
+      GENERATOR_CARDS: "${GEN_CARDS:-100000}"
+      GENERATOR_TERMINALS: "${GEN_TERMINALS:-10000}"
+      GENERATOR_TRUNCATE_FIRST: "${GEN_TRUNCATE:-true}"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=70 -XX:+UseG1GC"
+
+volumes:
+  postgres-data:

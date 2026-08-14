@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!--
+        Default profile: human readable, but every line still carries the three correlation keys
+        required by the assignment (instanceId, transactionId, externalId) via the MDC.
+    -->
+    <springProfile name="!json">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [instance=%X{instanceId:-?} tx=%X{transactionId:-?} extId=%X{externalId:-?}] %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <!--
+        json profile: one JSON object per line, MDC entries promoted to top level fields so a log
+        aggregator can filter on transactionId across all three containers. Enable with
+        SPRING_PROFILES_ACTIVE=json.
+    -->
+    <springProfile name="json">
+        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdcKeyName>instanceId</includeMdcKeyName>
+                <includeMdcKeyName>transactionId</includeMdcKeyName>
+                <includeMdcKeyName>externalId</includeMdcKeyName>
+                <customFields>{"application":"transaction-processor"}</customFields>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="JSON"/>
+        </root>
+    </springProfile>
+</configuration>

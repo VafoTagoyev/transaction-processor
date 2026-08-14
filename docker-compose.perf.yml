@@ -1,0 +1,122 @@
+# Performance harness. Self-contained on purpose (no `extends`, because Compose's extends
+# deliberately drops depends_on conditions). A single scalable "processor" service with no fixed
+# container name and no fixed host port, so the same dataset can be replayed against 1, 3 and 5
+# instances:
+#
+#   docker compose -f docker-compose.perf.yml --profile generator run --rm generator
+#   docker compose -f docker-compose.perf.yml up -d --build --scale processor=1
+#   docker compose -f docker-compose.perf.yml up -d --scale processor=3
+#   docker compose -f docker-compose.perf.yml up -d --scale processor=5
+#
+# See docs/performance-test.md and scripts/perf-test.sh.
+
+name: txperf
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: txprocessor
+      POSTGRES_USER: txprocessor
+      POSTGRES_PASSWORD: txprocessor
+    command:
+      - postgres
+      - -c
+      - max_connections=300
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=3GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - max_wal_size=8GB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - track_io_timing=on
+    ports:
+      - "5432:5432"
+    volumes:
+      - perf-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U txprocessor -d txprocessor"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    shm_size: 1gb
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  processor:
+    build: .
+    image: transaction-processor:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/txprocessor
+      DB_USER: txprocessor
+      DB_PASSWORD: txprocessor
+      DB_POOL_SIZE: "${DB_POOL_SIZE:-20}"
+      REDIS_HOST: valkey
+      REDIS_PORT: "6379"
+      WORKERS: "${WORKERS:-8}"
+      BATCH_SIZE: "${BATCH_SIZE:-1000}"
+      POLLING_DELAY: "${POLLING_DELAY:-200ms}"
+      PROCESSING_TIMEOUT: "2m"
+      LEASE_RENEWAL_INTERVAL: "20s"
+      QUEUE_CAPACITY: "${QUEUE_CAPACITY:-5000}"
+      MAX_RETRIES: "3"
+      RECOVERY_INTERVAL: "30s"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -XX:+UseG1GC"
+    ports:
+      # Ephemeral host ports so the service can be scaled freely.
+      - "8080"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  generator:
+    build: .
+    image: transaction-processor:latest
+    profiles: ["generator"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/txprocessor
+      DB_USER: txprocessor
+      DB_PASSWORD: txprocessor
+      REDIS_HOST: valkey
+      REDIS_PORT: "6379"
+      PROCESSOR_ENABLED: "false"
+      GENERATOR_ENABLED: "true"
+      GENERATOR_TRANSACTIONS: "${GEN_TRANSACTIONS:-1000000}"
+      GENERATOR_CARDS: "${GEN_CARDS:-100000}"
+      GENERATOR_TERMINALS: "${GEN_TERMINALS:-10000}"
+      GENERATOR_TRUNCATE_FIRST: "${GEN_TRUNCATE:-true}"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=70 -XX:+UseG1GC"
+
+volumes:
+  perf-postgres-data:
