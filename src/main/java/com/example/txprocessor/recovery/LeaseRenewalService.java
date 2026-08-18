@@ -8,7 +8,6 @@ import com.example.txprocessor.repository.TransactionClaimRepository.Lease;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -49,8 +48,7 @@ public class LeaseRenewalService {
         this.properties = properties;
     }
 
-    @Scheduled(fixedDelayString = "${processor.lease-renewal-interval:30s}",
-            initialDelayString = "${processor.lease-renewal-interval:30s}")
+    /** Scheduled by {@code SchedulingConfig} at {@code processor.lease-renewal-interval}. */
     public void renewLeases() {
         try {
             renewOnce();

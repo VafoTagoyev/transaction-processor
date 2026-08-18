@@ -26,7 +26,7 @@ banner() { echo; echo "=========================================================
 banner "STEP 1/8  Generating ${COUNT} NEW transactions"
 docker compose up -d --build postgres valkey
 GEN_TRANSACTIONS=${COUNT} GEN_CARDS=${GEN_CARDS:-100000} GEN_TERMINALS=${GEN_TERMINALS:-10000} \
-  docker compose --profile generator run --rm generator
+  docker compose --profile generator run --build --rm generator
 echo "NEW transactions: $(q "SELECT count(*) FROM transactions WHERE status='NEW'")"
 
 banner "STEP 2/8  Starting 3 instances x 8 workers"

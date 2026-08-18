@@ -9,6 +9,7 @@ import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -51,7 +52,19 @@ public abstract class IntegrationTestBase {
     protected static PlatformTransactionManager transactionManager;
     protected static LettuceConnectionFactory redisConnectionFactory;
     protected static StringRedisTemplate redisTemplate;
-    protected static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    /**
+     * Built the way Spring Boot builds its own, not with {@code new ObjectMapper()}.
+     *
+     * <p>This mapper is handed to {@code ResultPersistenceService} through the harness, standing in
+     * for the auto-configured bean the application receives at runtime. A bare mapper registers no
+     * modules, so it cannot serialise the {@link java.time.Instant} on
+     * {@code TransactionProcessedEvent} and every outbox write fails - a failure the application
+     * itself never has. {@code Jackson2ObjectMapperBuilder} is what Boot's JacksonAutoConfiguration
+     * uses: it registers the well-known modules on the classpath (JavaTimeModule among them) and
+     * disables WRITE_DATES_AS_TIMESTAMPS, so timestamps land in the payload as the same ISO-8601
+     * strings production writes rather than as epoch numbers.
+     */
+    protected static final ObjectMapper OBJECT_MAPPER = Jackson2ObjectMapperBuilder.json().build();
 
     @BeforeAll
     static void startInfrastructure() {

@@ -6,7 +6,6 @@ import com.example.txprocessor.repository.OutboxRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,7 +43,7 @@ public class OutboxRelay {
         this.batchSize = properties.getOutbox().getRelayBatchSize();
     }
 
-    @Scheduled(fixedDelayString = "${processor.outbox.relay-interval:1s}")
+    /** Scheduled by {@code SchedulingConfig} at {@code processor.outbox.relay-interval}. */
     @Transactional
     public void relay() {
         List<OutboxRecord> pending = outboxRepository.claimPending(batchSize);

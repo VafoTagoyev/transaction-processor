@@ -37,7 +37,12 @@ public class CommissionCalculator {
         return amount.multiply(rate).setScale(MONEY_SCALE, MONEY_ROUNDING);
     }
 
-    BigDecimal rateFor(OperationType operationType, BigDecimal amount) {
+    /**
+     * The rate that applies to this operation and amount, before it is multiplied out.
+     * Public so the boundary rule can be asserted directly rather than inferred from a
+     * rounded commission figure.
+     */
+    public BigDecimal rateFor(OperationType operationType, BigDecimal amount) {
         if (operationType == OperationType.INTERNAL) {
             return RATE_INTERNAL;
         }

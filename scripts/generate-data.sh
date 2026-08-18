@@ -16,7 +16,9 @@ echo ">> Ensuring PostgreSQL and Valkey are up"
 docker compose -f "${COMPOSE_FILE}" up -d postgres valkey
 
 echo ">> Generating ${GEN_TRANSACTIONS} transactions, ${GEN_CARDS} cards, ${GEN_TERMINALS} terminals"
-time docker compose -f "${COMPOSE_FILE}" --profile generator run --rm generator
+# --build is not optional: the compose file pins `image: transaction-processor:latest`, so once
+# that tag exists `run` reuses it and silently ignores every source change since it was built.
+time docker compose -f "${COMPOSE_FILE}" --profile generator run --build --rm generator
 
 echo
 echo ">> Result"

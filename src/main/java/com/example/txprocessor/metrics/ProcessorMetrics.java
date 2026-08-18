@@ -16,7 +16,11 @@ import java.util.function.Supplier;
  * with underscores and appends {@code _total} to counters, which produces exactly the metric
  * names required by the assignment (section 13). The mapping is tabulated in the README.
  */
-@Component
+// Explicit bean name: the derived default would be "processorMetrics", which collides with
+// Actuator's SystemMetricsAutoConfiguration#processorMetrics (Micrometer's CPU binder - an
+// unrelated class that also happens to be named ProcessorMetrics). Both beans are wanted, so
+// this one is renamed rather than either being suppressed. Every injection site wires by type.
+@Component("txProcessorMetrics")
 public class ProcessorMetrics {
 
     private final MeterRegistry registry;

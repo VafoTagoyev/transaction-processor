@@ -70,10 +70,11 @@
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
 
+        <!-- Compile scope, not runtime: TransactionGenerator uses the driver's COPY API
+             (org.postgresql.copy.CopyManager via PGConnection) directly at compile time. -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
         </dependency>
 
         <!-- Structured (JSON) logging, enabled by the "json" Spring profile. -->

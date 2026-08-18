@@ -48,7 +48,7 @@ for N in ${INSTANCE_COUNTS}; do
   sleep 5
 
   echo ">> regenerating the dataset (fixed seed, identical for every configuration)"
-  GEN_TRANSACTIONS=${COUNT} ${COMPOSE} --profile generator run --rm generator >/dev/null
+  GEN_TRANSACTIONS=${COUNT} ${COMPOSE} --profile generator run --build --rm generator >/dev/null
 
   echo ">> starting ${N} processor instance(s)"
   ${COMPOSE} up -d --build --scale processor="${N}" processor
